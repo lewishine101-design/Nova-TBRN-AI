@@ -1,0 +1,1 @@
+{"name":"nova-tbrn-ai-functions","private":true,"type":"module","engines":{"node":"22"},"main":"index.js","dependencies":{"firebase-functions":"^6.4.0","openai":"^5.20.0"}}
