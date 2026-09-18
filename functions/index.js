@@ -1,0 +1,13 @@
+import {onRequest} from "firebase-functions/v2/https";
+import {defineSecret,defineString} from "firebase-functions/params";
+import OpenAI from "openai";
+const OPENAI_API_KEY=defineSecret("OPENAI_API_KEY");
+const VECTOR_STORE_ID=defineString("TBRN_VECTOR_STORE_ID",{default:""});
+const SYSTEM=`You are Nova, TBRN's internal AI assistant for insurance surveying and claims support. Use approved TBRN knowledge as the source of truth for TBRN-specific procedures, templates and internal rules. Never invent a TBRN procedure, contractor allocation, claim fact, document or cost. Clearly distinguish evidenced facts, professional assessment/inference, and missing evidence. For claim reviews consider causation, scope, necessity, betterment, labour/material reasonableness, duplication, VAT, evidence and proportionate next steps. Use concise professional UK insurance language. Do not make final liability, coverage, fraud or settlement decisions for the human handler. If indexed TBRN material does not support a TBRN-specific answer, state that explicitly.`;
+export const api=onRequest({region:"europe-west2",secrets:[OPENAI_API_KEY],timeoutSeconds:120,memory:"512MiB"},async(req,res)=>{
+ const p=req.path.replace(/\/$/,"");
+ if(req.method==="GET"&&p==="/health")return res.json({ok:true,service:"nova-tbrn-ai",aiConfigured:true,knowledgeConfigured:Boolean(VECTOR_STORE_ID.value())});
+ if(req.method!=="POST"||p!=="/chat")return res.status(404).json({error:"Not found"});
+ const message=String(req.body?.message||"").trim();if(!message)return res.status(400).json({error:"Message required"});if(message.length>12000)return res.status(413).json({error:"Message too long"});
+ try{const client=new OpenAI({apiKey:OPENAI_API_KEY.value()});const tools=VECTOR_STORE_ID.value()?[{type:"file_search",vector_store_ids:[VECTOR_STORE_ID.value()],max_num_results:8}]:[];const response=await client.responses.create({model:"gpt-5.6-terra",instructions:SYSTEM,input:message,tools,reasoning:{effort:"medium"},max_output_tokens:2500});const sources=[];for(const item of response.output||[])for(const part of item.content||[])for(const a of part.annotations||[]){const n=a.filename||a.file_citation?.filename;if(n&&!sources.includes(n))sources.push(n)}return res.json({answer:response.output_text||"No answer returned.",sources,grounded:Boolean(VECTOR_STORE_ID.value())})}catch(e){console.error(e);return res.status(500).json({error:"Nova could not complete the request."})}
+});
